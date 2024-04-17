@@ -76,3 +76,45 @@ Gen_G16_Prf(pk_type pk, vk_type vk, phi_type phi_i, Ti_type T_i_minus1, wi_type 
 
   return {vk_i_prime, phi_i_prime, tsum, tsum2, pi_i, T_i_minus1}; // Include T_i_minus1 for next piece
 }
+
+#include <libsnark/libsnark.hpp>
+
+// Assuming you have defined your circuit and proof types
+
+Proof generateProofWithUpdates(const r1cs_ppzksnark<FIELD_T>& provingKey,
+                               const r1cs_ppzksnark<FIELD_T>::proof& proof,
+                               const r1cs_ppzksnark<FIELD_T>::witness& witness,
+                               const libff::biginta<FIELD_T> statement[][STATEMENT_LENGTH],
+                               const size_t statement_length,
+                               const size_t update_length) {
+
+  // Modified verification key and statement
+  r1cs_ppzksnark<FIELD_T>::verification_key modified_vk = provingKey.vk;
+  libff::biginta<FIELD_T> modified_statement[STATEMENT_LENGTH];
+
+  // Accumulators for tsum1 and tsum2
+  libff::biginta<FIELD_T> tsum1 = libff::biginta<FIELD_T>::one();
+  libff::biginta<FIELD_T> tsum2 = libff::biginta<FIELD_T>::one();
+
+  // Loop through elements in the statement
+  for (size_t j = 0; j < statement_length; ++j) {
+    if (j <= update_length / 2) {
+      // Update statement element using existing value and previous Ti element
+      modified_statement[j] = statement[j] + proof.public_inputs[j + statement_length / 2];
+      // Update tsum1 with current verification key element and updated statement
+      tsum1 *= modified_vk.gamma_abc[j] ^ libff::edt(modified_statement[j]);
+    } else {
+      // Randomly choose a new element for Ti
+      libff::biginta<FIELD_T> t = libff::random_element<FIELD_T>();
+      modified_statement[j] = t;
+      // Update tsum2 with current verification key element and new Ti element
+      tsum2 *= modified_vk.gamma_abc[j] ^ libff::edt(t);
+    }
+
+    // Update verification key element based on statement update and new Ti
+    modified_vk.gamma_abc0 ^= modified_vk.gamma_abc[j] ^ libff::edt(modified_statement[j]);
+  }
+
+  // Return modified verification key, statement, accumulators, proof, and updated Ti
+  return Proof(modified_vk, modified_statement, tsum1, tsum2, proof, witness);
+}
